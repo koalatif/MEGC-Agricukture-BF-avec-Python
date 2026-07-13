@@ -18,7 +18,7 @@ print("   écart=%.1e PIB=%.1f Mds -> %s"%(e,rb['GDP_VA']/1e3,ok(e<1e-6)))
 print("T3 - Choc fiscal +10 pts agroalimentaire : recyclage budgétaire + Walras")
 m2=CGE(); food=[i for i,c in enumerate(m2.d.I) if 62<=int(''.join(filter(str.isdigit,c)) or 0)<=97]
 m2.tic_sim=m2.tic.copy(); m2.tic_sim[food]+=0.10
-sol=root(m2.residual,xb,method='lm',options={'xtol': 1e-4}); x2=sol.x; r2=m2.report(x2)
+x2, _ = m2.solve(x0=xb, warn=False); r2=m2.report(x2)
 res2=np.max(np.abs(m2.residual(x2)))
 dR=(r2['GVTrev']-rb['GVTrev'])/1e3; dSG=(r2['SG']-rb['SG'])/1e3; dG=(r2['Gov']-rb['Gov'])/1e3
 print("   res=%.1e ΔRec=%+.1f ΔSG=%+.1f Mds bouclage=%.1e walras=%.4f -> %s"%(

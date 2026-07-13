@@ -24,11 +24,12 @@ def generate_trajectory_plot():
     cons = [p['Conso'] / 1000 for p in path] # Consommation globale
     exports = [p['Export'] / 1000 for p in path]
     imports = [p['Import'] / 1000 for p in path]
+    walras = [np.abs(p['walras']) for p in path]
     
-    plt.figure(figsize=(12, 8))
+    plt.figure(figsize=(15, 10))
     
     # Graphique 1 : PIB et Consommation
-    plt.subplot(2, 2, 1)
+    plt.subplot(2, 3, 1)
     plt.plot(years, gdp, 'b-o', linewidth=2, label="PIB (Valeur Ajoutée)")
     plt.title("Croissance du PIB", fontsize=12)
     plt.xlabel("Années", fontsize=10)
@@ -38,7 +39,7 @@ def generate_trajectory_plot():
     plt.legend()
     
     # Graphique 2 : Investissement (FBCF)
-    plt.subplot(2, 2, 2)
+    plt.subplot(2, 3, 2)
     plt.plot(years, fbcf, 'g-s', linewidth=2, label="FBCF Totale")
     plt.title("Évolution de l'Investissement", fontsize=12)
     plt.xlabel("Années", fontsize=10)
@@ -48,7 +49,7 @@ def generate_trajectory_plot():
     plt.legend()
     
     # Graphique 3 : Commerce Extérieur
-    plt.subplot(2, 2, 3)
+    plt.subplot(2, 3, 3)
     plt.plot(years, exports, 'r-^', linewidth=2, label="Exportations")
     plt.plot(years, imports, 'c-v', linewidth=2, label="Importations")
     plt.title("Balance Commerciale", fontsize=12)
@@ -59,11 +60,22 @@ def generate_trajectory_plot():
     plt.legend()
     
     # Graphique 4 : Consommation
-    plt.subplot(2, 2, 4)
+    plt.subplot(2, 3, 4)
     plt.plot(years, cons, 'm-d', linewidth=2, label="Consommation (Ménages)")
     plt.title("Consommation des Ménages", fontsize=12)
     plt.xlabel("Années", fontsize=10)
     plt.ylabel("Milliards FCFA", fontsize=10)
+    plt.xticks(years)
+    plt.grid(True, linestyle='--', alpha=0.7)
+    plt.legend()
+    
+    # Graphique 5 : Distance de Walras
+    plt.subplot(2, 3, 5)
+    plt.plot(years, walras, 'k-x', linewidth=2, label="|Walras|")
+    plt.title("Loi de Walras (Erreur absolue)", fontsize=12)
+    plt.xlabel("Années", fontsize=10)
+    plt.ylabel("Écart (FCFA)", fontsize=10)
+    plt.yscale('log')
     plt.xticks(years)
     plt.grid(True, linestyle='--', alpha=0.7)
     plt.legend()

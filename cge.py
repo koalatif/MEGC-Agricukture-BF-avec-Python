@@ -146,7 +146,6 @@ class CGE:
         g_zp=PP*(1-self.ttip-self.tspec)-(self.va*PVA+(self.aij*PC[:,None]).sum(0))
         if getattr(self,'mcp',True):
             # complémentarité (Fischer-Burmeister lissée) : profit<=0  ⊥  XST>=0
-            # -> autorise la fermeture de branches (solutions de coin, prix mondiaux fixés + RC constants)
             a=-g_zp; b=XST/np.maximum(self.XSTo,1.0)
             r_zp=a+b-np.sqrt(a*a+b*b+1e-14)
         else:
@@ -185,11 +184,37 @@ class CGE:
         MRG0=self.shmg*( (self.tmg*Qbase).sum() )
         if self.closure_inv=='exogene':
             INV=self.INVo_q.copy()
-            Qd=Qbase+INV+self.shmg*((self.tmg*(Qbase+INV)).sum())
-            TICrev,TIPrev,TDrev=gvt_rev(Qd,PA)
-            YG=TICrev+TIPrev+TDrev+self.shK_G@Kinc+self.trRecvG
-            SG=YG-(PC*self.CGo_q).sum()-self.trPaidG
-            IT=SH.sum()+SF.sum()+SG+self.SROWo+(1.0-self.sh_lev_gvt)*LEV
+            IT_req = (PC*INV).sum() + (PC*self.VSTKo_q).sum()
+            # Analytique : point fixe sur adj_sh
+            CTH0 = YDH
+            realb0 = CTH0 - (PC[:,None]*self.Cmin).sum(0)
+            C0 = self.Cmin + self.gam*realb0[None,:]/PC[:,None]
+            Qd0 = DIsum + C0.sum(1) + self.CGo_q + INV + self.VSTKo_q
+            Qd0 = Qd0 + self.shmg*((self.tmg*Qd0).sum())
+            TIC0, TIPrev, TDrev = gvt_rev(Qd0, PA)
+            SG0 = TIC0 + TIPrev + TDrev + self.shK_G@Kinc + self.trRecvG - (PC*self.CGo_q).sum() - self.trPaidG
+            
+            dSH = self.shh * YDH
+            dC = - self.gam * dSH[None,:] / np.maximum(PC, 1e-9)[:,None]
+            dQd = dC.sum(1) + self.shmg*((self.tmg*dC.sum(1)).sum())
+            dTIC = (self.tic_sim * PA * dQd).sum()
+            
+            dSH_total = dSH.sum()
+            num = IT_req - SF.sum() - SG0 - self.SROWo - (1.0-self.sh_lev_gvt)*LEV
+            den = dSH_total + dTIC
+            adj_sh = num / max(den, 1e-9)
+            
+            SH = adj_sh * self.shh * YDH
+            CTH = YDH - SH
+            realb = CTH - (PC[:,None]*self.Cmin).sum(0)
+            C = self.Cmin + self.gam*realb[None,:]/PC[:,None]
+            Qd = DIsum + C.sum(1) + self.CGo_q + INV + self.VSTKo_q
+            Qd = Qd + self.shmg*((self.tmg*Qd).sum())
+            TICrev, TIPrev, TDrev = gvt_rev(Qd, PA)
+            YG = TICrev + TIPrev + TDrev + self.shK_G@Kinc + self.trRecvG
+            SG = YG - (PC*self.CGo_q).sum() - self.trPaidG
+            IT = IT_req
+            GFCF = IT_req - (PC*self.VSTKo_q).sum()
         else:
             # point fixe analytique sur GFCF (INV=gamINV*GFCF/PC, TICrev linéaire en INV)
             Qd0=Qbase+self.shmg*((self.tmg*Qbase).sum())
@@ -197,9 +222,8 @@ class CGE:
             base_inc=TIC0+TIPrev+TDrev+self.shK_G@Kinc+self.trRecvG
             SG0=base_inc-(PC*self.CGo_q).sum()-self.trPaidG
             IT0=SH.sum()+SF.sum()+SG0+self.SROWo+(1.0-self.sh_lev_gvt)*LEV
-            # dTICrev/dGFCF : taxe sur l'investissement et ses marges
-            gI=self.gamINV/PC
-            k=(self.tic_sim*PA*gI).sum()+(self.tic_sim*PA*self.shmg).sum()*(self.tmg*gI).sum()
+            # multiplicateur keynésien de l'investissement sur l'épargne publique
+            k=(self.tic_sim*PA*self.gamINV/np.maximum(PC, 1e-9)).sum() + (self.shmg*self.tic_sim*PA).sum() * (self.tmg*self.gamINV/np.maximum(PC, 1e-9)).sum()
             VSTKval=(PC*self.VSTKo_q).sum()
             GFCF=(IT0-VSTKval)/max(1.0-k,1e-6)
             INV=self.gamINV*GFCF/PC
@@ -249,7 +273,7 @@ class CGE:
         warm=x0 is not None
         if x0 is None: x0=(self.x0_sec if self.sec_cap else self.x0).copy()
         x0=np.maximum(np.asarray(x0,float),1e-8)
-        opts={'xtol':tol} if method=='lm' else None
+        opts={'xtol':tol} if method=='lm' else {}
         best=None; bestr=np.inf
         attempts=(['lev','log','base'] if warm else ['log','lev','base'])
         for a in attempts:
@@ -268,7 +292,7 @@ class CGE:
         if warn and abs(self._store['walras'])>1e-4*max(abs(self.SROWo),1.0):
             warnings.warn(f"CGE.solve: loi de Walras violée ({self._store['walras']:.2f})")
         return best.x,best
-    def solve_path(self,setter,x0=None,step0=0.15,tol=2e-3,max_time=600,verbose=False):
+    def solve_path(self,setter,x0=None,step0=0.15,tol=2e-3,max_time=600,verbose=False,method='hybr'):
         """Homotopie adaptative s in (0,1] avec pivotage automatique des rentes en coin
         (capital sectoriel oisif : R=0, KD<KDj). setter(m,s) applique la fraction s du choc.
         Retourne (x, info)."""
@@ -290,22 +314,46 @@ class CGE:
                 for (k,j) in idle: r[nJ+nI+nL+k*self.nJ+j]=(Rm[k,j]-1e-4)*10.0
             return r
         cur=0.0; step=step0; nfail=0
+        if verbose:
+            with open('convergence_log.csv', 'w') as f:
+                f.write('s,residual,walras\n')
         while cur<1.0-1e-12:
             if _t.time()-t0>max_time:
                 warnings.warn("solve_path: temps maximal atteint (s=%.3f)"%cur); break
             s=min(cur+step,1.0)
             setter(self,s)
-            sol=root(res_piv,x,method='lm',options={'maxiter':getattr(self,'path_maxiter',20000), 'xtol': 1e-4})
+            sol=root(res_piv,x,method='hybr',options={'maxiter':getattr(self,'path_maxiter',20000), 'xtol': 1e-4})
             rr=float(np.max(np.abs(res_piv(sol.x))))
+            if rr>tol and method!='lm':  # Fallback to lm if hybr fails
+                sol=root(res_piv,x,method='lm',options={'maxiter':getattr(self,'path_maxiter',20000), 'xtol': 1e-4})
+                rr=float(np.max(np.abs(res_piv(sol.x))))
+            if rr>tol: # Try the robust log solver
+                xs, best_sol = self.solve(x0=x, warn=False)
+                rr_solve = float(np.max(np.abs(self.residual(xs))))
+                if rr_solve < rr:
+                    sol = best_sol
+                    sol.x = xs
+                    rr = rr_solve
             if rr<tol:
                 x=sol.x; cur=s; step=min(step*1.6,step0); nfail=0
                 if self.sec_cap:                      # mise à jour du régime
-                    _,_,Rm,_=self.unpack(x)
-                    for (k,j) in zip(*np.where((Rm<2e-3)&(self.KDo>1e-9))): idle.add((int(k),int(j)))
-                    KD=self._store['KD']
+                    R=sol.x[nJ+nI+nL:nJ+nI+nL+self.nK*self.nJ].reshape((self.nK,self.nJ))
+                    for (k,j) in zip(*np.where((R<2e-3)&(self.KDo>1e-9))): idle.add((int(k),int(j)))
                     for (k,j) in [c for c in idle if self._store['KD'][c[0],c[1]]>self.KDj[c[0],c[1]]*(1+1e-6)]:
                         idle.discard((k,j))           # rente redevient positive : cellule libérée
-                if verbose: print("   s=%.3f res=%.1e coins=%d"%(cur,rr,len(idle)))
+                if s>=1.0:
+                    # Final polish to get exact solution
+                    xs, best_sol = self.solve(x0=x, warn=False)
+                    rr_solve = float(np.max(np.abs(self.residual(xs))))
+                    if rr_solve < 1e-4:  # Accept polish if it converged well
+                        x = xs
+                        rr = rr_solve
+                    break
+                if verbose: 
+                    print("   s=%.3f res=%.1e coins=%d"%(cur,rr,len(idle)))
+                    w = float(self._store['walras'])
+                    with open('convergence_log.csv', 'a') as f:
+                        f.write(f'{cur},{rr},{w}\n')
             else:
                 added=False
                 if self.sec_cap:                      # pivot spéculatif : rentes écrasées dans l'essai raté
@@ -315,6 +363,10 @@ class CGE:
                 if not added:
                     step/=2
                 nfail+=1
+                if verbose:
+                    w = float(self._store['walras'])
+                    with open('convergence_log.csv', 'a') as f:
+                        f.write(f'{cur+step},{rr},{w}\n')
                 if step<1e-4 or nfail>60:
                     warnings.warn("solve_path: blocage à s=%.4f (res=%.1e)"%(cur,rr)); break
         setter(self,cur)
@@ -362,7 +414,7 @@ class CGE:
                 pLS,pKS,pKD=prevLS.copy(),prevKS.copy(),prevKD.copy()
                 def _blend(mm,s):
                     mm.LS=pLS+(LS1-pLS)*s; mm.KS=pKS+(KS1-pKS)*s; mm.KDj=pKD+(KD1-pKD)*s
-                x,info=self.solve_path(_blend,x0=x0t,step0=1.0,max_time=120)
+                x,info=self.solve_path(_blend,x0=x0t,step0=1.0,max_time=120,verbose=verbose)
             prevLS,prevKS,prevKD=self.LS.copy(),self.KS.copy(),self.KDj.copy()
             rep=self.report(x); rep['t']=t; rep['KS']=KS.copy(); rep['LS']=LS.copy(); rep['KDj']=KDj.copy(); rep['x']=x.copy()
             res=float(np.max(np.abs(self.residual(x)))); rep['res']=res
@@ -399,7 +451,7 @@ class CGE:
 
 def run_demo():
     print("=== MEGC Burkina Faso 2018 - Python (version réparée) ===")
-    m=CGE(); r=m.residual(m.x0)
+    m=CGE(); r=m.residual(m.x0_sec if m.sec_cap else m.x0)
     print("[0] Résidu année de base: max=%.1e | Walras=%.2e"%(np.max(np.abs(r)),m._store['walras']))
     print("[1] Équilibre statique de référence (BAU):")
     xb,sol=m.solve(); rb=m.report(xb)
@@ -408,7 +460,7 @@ def run_demo():
     mf=CGE(); food=[i for i,c in enumerate(mf.d.I) if 62<=int(''.join(filter(str.isdigit,c)))<=97]
     tic0=mf.tic.copy()
     def setter(mm,s): mm.tic_sim=tic0.copy(); mm.tic_sim[food]+=0.10*s
-    xf,info=mf.solve_path(setter,x0=xb); rf=mf.report(xf)
+    xf,info=mf.solve_path(setter,x0=xb,verbose=True); rf=mf.report(xf)
     print("    ΔRecettes=%.0f Mds  ΔSG=%.0f Mds  Walras=%.2e  (s=%.2f res=%.1e)"%(
         (rf['GVTrev']-rb['GVTrev'])/1e3,(rf['SG']-rb['SG'])/1e3,rf['walras'],info['s'],info['res']))
     print("[3] Dynamique récursive BAU (3 périodes, ~minutes — augmenter T selon besoin):")
