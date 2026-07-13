@@ -22,6 +22,12 @@ def load(dataset='reconcilie'):
     return SM,order,meta
 class D: pass
 def extract(SM,order,meta,verbose=False):
+    """
+    Extrait les données de la Matrice de Comptabilité Sociale (MCS) pour initialiser 
+    les paramètres de base (valeurs nominales) du modèle CGE.
+    Gère également le nettoyage des valeurs aberrantes (EBE négatifs, matrices Make négatives).
+    Retourne un objet (d) contenant les matrices extraites.
+    """
     pos={o:i for i,o in enumerate(order)}
     def C(a,b,c,d):
         x=(a,b);y=(c,d); return SM[pos[x],pos[y]] if x in pos and y in pos else 0.0
@@ -85,6 +91,12 @@ def extract(SM,order,meta,verbose=False):
     
     return d
 def calibrate(d, elas=None):
+    """
+    Calibre les paramètres comportementaux (élasticités, parts, échelles) du modèle
+    à partir des flux nominaux extraits de la MCS (objets 'd').
+    Utilise les formules CES/CET pour s'assurer que les prix de base valent 1.
+    Retourne un objet (p) contenant les paramètres du modèle.
+    """
     e=dict(sVA=1.5,sLD=0.8,sKD=0.8,sXT=2.0,sX=2.0,sM=2.0,sXD=2.0,frisch=-1.5,sY=1.0)
     if elas: e.update(elas)
     p=D(); p.e=e
@@ -99,6 +111,11 @@ def calibrate(d, elas=None):
     p.d=d
     return p
 def bench_check(d,p):
+    """
+    Vérifie la robustesse mathématique de la calibration en recalculant 
+    les identités de base et en s'assurant que les erreurs de fermeture (résidus) 
+    sont numériquement nulles.
+    """
     from nests import ces_price, ces_dem
     VA=ces_price(p.beta_VA,p.B_VA,np.ones((2,len(d.J))),p.e['sVA'])
     Q=ces_price(p.beta_M,p.B_M,np.ones((2,len(d.I))),p.e['sM'])

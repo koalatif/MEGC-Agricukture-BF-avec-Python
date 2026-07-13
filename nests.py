@@ -18,16 +18,27 @@ def ces_calib(Xo, sigma, Po=None):
     return beta,B,Qo,rho
 
 def ces_price(beta,B,P,sigma):
+    """
+    Calcule le prix composite d'un agrégat CES (ex: prix de la Valeur Ajoutée).
+    La fonction de prix CES est P_CES = (1/B) * [sum beta_i^sigma * P_i^(1-sigma)]^(1/(1-sigma))
+    """
     P=np.asarray(P,float)
     val=(np.where(beta>0,beta**sigma * P**(1-sigma),0.0)).sum(0)
     return (1/B)*val**(1/(1-sigma))
 
 def ces_dem(beta,B,Q,PQ,P,sigma):
+    """
+    Calcule la demande dérivée pour chaque composant i d'un agrégat CES.
+    D_i = Q * (B * beta_i * PQ / P_i)^sigma
+    """
     out=Q*(B**(sigma-1))*(np.where(beta>0,beta,1.0)**sigma)*(PQ/P)**sigma
     return np.where(beta>0,out,0.0)
 
 def cet_calib(Xo,sigma):
-    """CET Z=B[sum beta X^rho]^(1/rho), rho=(sigma+1)/sigma (>1)."""
+    """
+    Calibre les paramètres d'une fonction de transformation CET (Constant Elasticity of Transformation).
+    Z=B[sum beta X^rho]^(1/rho), rho=(sigma+1)/sigma (>1).
+    """
     Xo=np.asarray(Xo,float); pos=Xo>0
     rho=(sigma+1)/sigma
     w=np.where(pos, Xo**(1/sigma),0.0)              # Po=1
@@ -38,11 +49,19 @@ def cet_calib(Xo,sigma):
     return beta,B,Zo,rho
 
 def cet_price(beta,B,P,sigma):
+    """
+    Calcule le prix composite d'un agrégat CET (ex: prix de la production vendue localement + exportée).
+    P_CET = (1/B) * [sum beta_i^(-sigma) * P_i^(1+sigma)]^(1/(1+sigma))
+    """
     P=np.asarray(P,float)
     val=(np.where(beta>0,beta**(-sigma)*P**(1+sigma),0.0)).sum(0)
     return (1/B)*val**(1/(1+sigma))
 
 def cet_sup(beta,B,Z,PZ,P,sigma):
+    """
+    Calcule l'offre dérivée pour chaque composant i d'un agrégat CET.
+    S_i = Z * (B * beta_i^(-1) * P_i / PZ)^sigma
+    """
     return Z*(B**(sigma+1))*(beta**(-sigma))*(P/PZ)**sigma
 
 if __name__=="__main__":
