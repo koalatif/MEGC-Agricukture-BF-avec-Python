@@ -58,6 +58,23 @@ Pour pallier ce bruit numérique en virgule flottante inhérent à l'architectur
     \item La tolérance d'acceptation de pas d'homotopie a été ajustée à \cdot 10^{-4}$.
 \end{itemize}
 
-Cet ajustement (de l'ordre de .02\%$) est parfaitement légitime en modélisation macroéconomique appliquée et permet désormais au modèle de calculer des trajectoires cohérentes même lors de chocs non-linéaires majeurs, empêchant les faux négatifs de convergence.
+\section{Calibrage à l'État Stationnaire (Croissance Dynamique Réaliste)}
+
+\subsection{Problème identifié : Taux de croissance explosif}
+Lors des simulations dynamiques sur plusieurs années, le modèle générait une croissance irréaliste du PIB (plus de 15\% par an). Ce comportement est un artefact classique des modèles d'Équilibre Général Calculable (MEGC). 
+
+Par défaut, en l'absence de données empiriques sur le stock de capital réel, les MEGC calibrent le capital initial de l'année de base sur la valeur de sa rémunération (EBE), fixant virtuellement son rendement à $r=1$ (100\%). Le stock de capital est donc fortement sous-évalué dans la base de données.
+Face à une demande d'investissement (FBCF) très forte dans la Matrice de Comptabilité Sociale (ex: 2~300 Mds pour un capital artificiel de 4~000 Mds), la règle d'accumulation dynamique ($K_{t+1} = K_t(1-\delta) + I_t$) provoquait une augmentation annuelle du capital de plus de 50\%, entraînant un doublement du PIB en quelques années.
+
+\subsection{Correction par l'équation d'accumulation}
+Afin d'obtenir une trajectoire de base (Business As Usual) réaliste et en équilibre de long terme (Steady-State), un multiplicateur d'investissement ($\phi_{inv}$) a été introduit dans la méthode \texttt{solve\_dynamic} du fichier \texttt{cge.py}. 
+
+Ce multiplicateur calibre le volume de l'investissement de la première période de façon à ce que le capital croisse exactement au rythme démographique $n$, compensant l'arbitrage initial des prix. La formule appliquée à l'année de base est :
+\begin{equation}
+    \phi_{inv} = \frac{K_0 \cdot (\delta + n)}{I_0}
+\end{equation}
+
+Ensuite, pour chaque itération $t$, l'investissement est ajusté : $I_{units} = I_t \cdot \phi_{inv}$.
+\textbf{Impact économique :} Les scénarios dynamiques de référence (BAU) produisent désormais une croissance tendancielle réaliste, calée sur le taux exogène $n$ (environ 3\% à 5\% selon les paramètres). Les véritables chocs économiques appliqués lors des simulations (ex: modification de l'offre de travail ou des prix mondiaux) viendront faire \textit{dévier} l'économie par rapport à cette tendance réaliste, facilitant l'interprétation des résultats.
 
 \end{document}

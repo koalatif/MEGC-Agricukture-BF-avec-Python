@@ -370,20 +370,30 @@ class CGE:
             if not rep['conv']: warnings.warn(f"dynamique t={t}: résidu {res:.1e}")
             self.residual(x); Rj=self._store['R']; rep['R']=Rj
             path.append(rep)
-            PC=rep['PC']; Pinv=float((self.gamINV*PC).sum())
-            Ireal=rep['GFCF']/max(Pinv,1e-6)
+            if t == 0:
+                # Calcul du multiplicateur d'investissement à l'état stationnaire
+                # phi_inv calibre I_0 pour que K croisse au rythme n et compense la sous-évaluation du capital
+                PC0 = rep['PC']; Pinv0 = float((self.gamINV * PC0).sum())
+                Ireal_0 = rep['GFCF'] / max(Pinv0, 1e-6)
+                self.phi_inv = KS.sum() * (delta + n) / max(Ireal_0, 1e-6)
+                
+            PC = rep['PC']; Pinv = float((self.gamINV * PC).sum())
+            Ireal = rep['GFCF'] / max(Pinv, 1e-6)
+            Ireal_units = Ireal * self.phi_inv
+            
             if self.sec_cap:
                 for k in range(self.nK):
-                    Rk=Rj[k]; Kk=KDj[k]
-                    Ik_tot=Ireal*(Kk.sum()/max(KDj.sum(),1e-9))
-                    Rbar=(Rk*Kk).sum()/max(Kk.sum(),1e-9)
-                    w=Kk*np.where(Rbar>0,(np.maximum(Rk,1e-6)/Rbar)**sigma_inv,1.0)
-                    w=w/max(w.sum(),1e-9)
-                    KDj[k]=Kk*(1-delta)+Ik_tot*w
-                KS=KDj.sum(1)
+                    Rk = Rj[k]; Kk = KDj[k]
+                    Ik_tot = Ireal_units * (Kk.sum() / max(KDj.sum(), 1e-9))
+                    Rbar = (Rk * Kk).sum() / max(Kk.sum(), 1e-9)
+                    w = Kk * np.where(Rbar > 0, (np.maximum(Rk, 1e-6) / Rbar)**sigma_inv, 1.0)
+                    w = w / max(w.sum(), 1e-9)
+                    KDj[k] = Kk * (1 - delta) + Ik_tot * w
+                KS = KDj.sum(1)
             else:
-                kshare=KS/max(KS.sum(),1e-9); KS=KS*(1-delta)+kshare*Ireal
-            LS=LS*(1+n)
+                kshare = KS / max(KS.sum(), 1e-9)
+                KS = KS * (1 - delta) + kshare * Ireal_units
+            LS = LS * (1 + n)
             if verbose: print(f"    t={t}: PIB(VA)={rep['GDP_VA']/1e3:.0f} Mds  K={KS.sum()/1e3:.0f}  résidu={res:.0e} ({'OK' if rep['conv'] else '~'})")
         return path
 
