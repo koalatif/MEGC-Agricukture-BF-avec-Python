@@ -14,10 +14,12 @@ dynamique récursive, **reporting enrichi** (bien-être, revenus, sectoriel) et 
 
 ## Démarrer
 ```bash
-pip install numpy scipy openpyxl matplotlib
+pip install numpy scipy openpyxl matplotlib pytest
 python demo.py        # démonstration complète (scénarios + bien-être + dynamique + exports)
 python cge.py         # équilibre + choc fiscal + dynamique
 python scenarios.py   # exemples de scénarios
+pytest tests/         # validation complète et automatisée du modèle (loi de Walras, homotopie, dynamique)
+python plot_dynamique.py # générer les trajectoires économiques sur 5 ans (trajectoires_dynamiques.png)
 ```
 
 ## Modules
