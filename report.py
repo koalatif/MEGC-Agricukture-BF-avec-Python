@@ -18,7 +18,11 @@ def _labels(m):
     return {}
 
 def equivalent_variation(m, r0, r1):
-    """Variation équivalente par ménage (LES/Stone-Geary), en milliards FCFA."""
+    """
+    Calcule la variation équivalente (Bien-être de Hicks) pour chaque catégorie de ménage.
+    Indique combien il faudrait donner au ménage (en monnaie de l'année de base) pour 
+    qu'il atteigne la même utilité qu'après le choc.
+    """
     PC0=r0['PC']; gam=m.gam; Cmin=m.Cmin
     ev={}
     for h,name in enumerate(m.d.H):
@@ -74,7 +78,12 @@ def print_summary(m, r0, r1=None, title="Résultats"):
         print("  Bien-être (variation équivalente, Mds FCFA):")
         for h,v in ev.items(): print(f"     {h:6s}: {v:+.1f}")
 
-def export_excel(path, m, r0, r1=None, dyn_path=None, dyn_shock=None):
+def export_excel(m, r0, r1=None, path="resultats.xlsx", dyn_path=None, dyn_shock=None):
+    """
+    Exporte les résultats du modèle vers un fichier Excel.
+    Si r1 (résultats post-choc) est fourni, génère des colonnes de comparaison 
+    (écarts relatifs en pourcentage) par rapport au scénario de base (r0).
+    """
     import openpyxl
     from openpyxl.styles import Font, PatternFill
     wb=openpyxl.Workbook(); HF=Font(bold=True,color='FFFFFF'); FILL=PatternFill('solid',fgColor='2F5496')
@@ -119,3 +128,61 @@ def plot_dynamic(path_bau, path_shock=None, out="sentier_dynamique.png", labels=
     ax.set_xlabel("Période"); ax.set_ylabel("PIB (VA), Mds FCFA"); ax.set_title("Sentier dynamique du PIB")
     ax.legend(); ax.grid(alpha=0.3); fig.tight_layout(); fig.savefig(out,dpi=110); plt.close(fig)
     return out
+
+def plot_static(m, r0, r1, out="graphiques_statiques.png"):
+    """
+    Génère un graphique à barres pour visualiser les variations des principaux agrégats macro-économiques.
+    """
+    try:
+        import matplotlib; matplotlib.use('Agg'); import matplotlib.pyplot as plt
+    except Exception: return None
+    
+    mt = macro_table(m, r0, r1)
+    # Filtrer pour ne garder que les agrégats pertinents (ignorer IPC et Salaire s'ils ne varient pas)
+    keys = [k for k in ["PIB_VA", "Conso", "Invest", "Gov", "Export", "Import"] if k in mt]
+    variations = [mt[k][2] for k in keys]
+    
+    fig, axes = plt.subplots(1, 2, figsize=(12, 5))
+    
+    # Graphique Macro
+    ax = axes[0]
+    bars = ax.bar(keys, variations, color=['#2F5496' if v >= 0 else '#C00000' for v in variations])
+    ax.axhline(0, color='black', linewidth=1)
+    ax.set_ylabel("Variation (%)")
+    ax.set_title("Impact Macro-économique")
+    ax.grid(axis='y', alpha=0.3)
+    for bar in bars:
+        yval = bar.get_height()
+        ax.text(bar.get_x() + bar.get_width()/2.0, yval + (0.1 if yval >= 0 else -0.3),
+                f"{yval:+.1f}%", ha='center', va='bottom' if yval >= 0 else 'top', fontweight='bold')
+    
+    # Graphique Bien-être (Variation Équivalente)
+    ax = axes[1]
+    ev = equivalent_variation(m, r0, r1)
+    h_keys = list(ev.keys())
+    ev_vals = [ev[k] for k in h_keys]
+    bars = ax.bar(h_keys, ev_vals, color=['#548235' if v >= 0 else '#C00000' for v in ev_vals])
+    ax.axhline(0, color='black', linewidth=1)
+    ax.set_ylabel("Milliards FCFA")
+    ax.set_title("Bien-être (Variation Équivalente)")
+    ax.grid(axis='y', alpha=0.3)
+    for bar in bars:
+        yval = bar.get_height()
+        ax.text(bar.get_x() + bar.get_width()/2.0, yval + (0.5 if yval >= 0 else -1.5),
+                f"{yval:+.1f}", ha='center', va='bottom' if yval >= 0 else 'top', fontweight='bold')
+    
+    fig.tight_layout()
+    fig.savefig(out, dpi=120)
+    plt.close(fig)
+    return out
+
+def generate_full_report(m, r0, r1, prefix="simulation"):
+    """
+    Génère la table Excel et les graphiques pour une simulation donnée.
+    """
+    excel_file = f"{prefix}_resultats.xlsx"
+    plot_file = f"{prefix}_graphiques.png"
+    
+    export_excel(m, r0, r1, path=excel_file)
+    plot_static(m, r0, r1, out=plot_file)
+    print(f"\n[Rapport généré] Excel: '{excel_file}' | Graphiques: '{plot_file}'")

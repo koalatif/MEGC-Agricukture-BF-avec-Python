@@ -17,6 +17,12 @@ np.seterr(all='ignore')
 
 class CGE:
     def __init__(self, elas=None, dataset='reconcilie'):
+        """
+        Initialise le modèle d'Equilibre Général Calculable (CGE).
+        Charge les données calibrées (via calib.py) et alloue la mémoire pour toutes les 
+        variables endogènes et exogènes du modèle. Configure également les paramètres 
+        de bouclage macroéconomique par défaut.
+        """
         SM,order,meta=load(dataset); d=extract(SM,order,meta); p=calibrate(d,elas)
         self.dataset=dataset
         self.d=d; self.p=p; self.e=p.e
@@ -115,6 +121,7 @@ class CGE:
         self.LS=self.LSo.copy(); self.KS=self.KSo.copy(); self.KDj=self.KDo.copy()
         self.tic_sim=self.tic.copy()
         self.pwm=np.ones(self.nI); self.pwe=np.ones(self.nI)
+        self.tsub_interm=np.zeros((self.nI,self.nJ))
         # --- bouclages macro ---
         self.mcp=False                    # équations pures par défaut ; coins gérés par solve_path (pivots)
         self.closure_lab='plein_emploi'   # 'plein_emploi' | 'chomage' (salaire RÉEL fixe)
@@ -128,6 +135,17 @@ class CGE:
             return x[:n],W,R,x[n+self.nL+self.nK*self.nJ:]
         return x[:n],x[n:n+self.nL],x[n+self.nL:n+self.nL+self.nK],x[n+self.nL+self.nK:]
     def residual(self,x):
+        """
+        Fonction centrale du modèle CGE. Évalue le système d'équations non linéaires.
+        Prend un vecteur de variables endogènes (x) et renvoie un vecteur de résidus (erreurs de fermeture).
+        Le solveur cherche à annuler ces résidus.
+        Contient les blocs :
+        - Équations de Prix (composite, domestique, VA)
+        - Équations de Production et Demandes de Facteurs
+        - Équations de Revenus (institutions, transferts, taxes)
+        - Équations de Demande (consommation, investissement)
+        - Équilibres des Marchés (biens et services, facteurs)
+        """
         d=self.d; p=self.p
         PL,W,R,XST=self.unpack(x)
         PE=self.pwe.copy(); PM=self.pwm.copy()
@@ -143,7 +161,7 @@ class CGE:
             RC=ces_price(p.beta_KD,p.B_KD,R[:,None]*onesJ,self.sKD); RC=np.where(p.KDCO>0,RC,1.0)
         PVA=ces_price(p.beta_VA,p.B_VA,np.array([WC,RC]),self.sVA)
         PP=(self.ms*PT[None,:]).sum(1)
-        g_zp=PP*(1-self.ttip-self.tspec)-(self.va*PVA+(self.aij*PC[:,None]).sum(0))
+        g_zp=PP*(1-self.ttip-self.tspec)-(self.va*PVA+(self.aij*PC[:,None]*(1-self.tsub_interm)).sum(0))
         if getattr(self,'mcp',True):
             # complémentarité (Fischer-Burmeister lissée) : profit<=0  ⊥  XST>=0
             a=-g_zp; b=XST/np.maximum(self.XSTo,1.0)
@@ -180,7 +198,8 @@ class CGE:
             TICrev=(self.tic_sim*PAv*Qd).sum()
             TIPrev=(self.ttip*PP*XST).sum()+self.sh_lev_gvt*LEV
             TDrev=(self.ttdh*YH).sum()+TDF.sum()
-            return TICrev,TIPrev,TDrev
+            SUBrev=(self.tsub_interm*self.aij*PC[:,None]*XST[None,:]).sum()
+            return TICrev,TIPrev-SUBrev,TDrev
         MRG0=self.shmg*( (self.tmg*Qbase).sum() )
         if self.closure_inv=='exogene':
             INV=self.INVo_q.copy()
@@ -293,9 +312,13 @@ class CGE:
             warnings.warn(f"CGE.solve: loi de Walras violée ({self._store['walras']:.2f})")
         return best.x,best
     def solve_path(self,setter,x0=None,step0=0.15,tol=2e-3,max_time=600,verbose=False,method='hybr'):
-        """Homotopie adaptative s in (0,1] avec pivotage automatique des rentes en coin
-        (capital sectoriel oisif : R=0, KD<KDj). setter(m,s) applique la fraction s du choc.
-        Retourne (x, info)."""
+        """
+        Résout le modèle de manière progressive (homotopie) pour assurer la convergence 
+        lors de chocs importants.
+        Applique le choc par paliers successifs de 0 à 1. Gère également les changements de régime
+        (ex: chômage vers plein emploi, contraintes de non-négativité sur l'investissement) 
+        grâce à une approche par pivot linéaire local.
+        """
         import time as _t
         from scipy.optimize import root
         t0=_t.time()
@@ -311,7 +334,7 @@ class CGE:
             r=self.residual(xx)
             if idle and self.sec_cap:
                 _,_,Rm,_=self.unpack(xx)
-                for (k,j) in idle: r[nJ+nI+nL+k*self.nJ+j]=(Rm[k,j]-1e-4)*10.0
+                for (k,j) in idle: r[nJ+nI+nL+k*self.nJ+j]=(Rm[k,j]-0.0)*1.0
             return r
         cur=0.0; step=step0; nfail=0
         if verbose:
@@ -343,10 +366,10 @@ class CGE:
                         idle.discard((k,j))           # rente redevient positive : cellule libérée
                 if s>=1.0:
                     # Final polish to get exact solution
-                    xs, best_sol = self.solve(x0=x, warn=False)
-                    rr_solve = float(np.max(np.abs(self.residual(xs))))
+                    sol_polish = root(res_piv, x, method='lm', options={'xtol': 1e-8})
+                    rr_solve = float(np.max(np.abs(self.residual(sol_polish.x))))
                     if rr_solve < 1e-4:  # Accept polish if it converged well
-                        x = xs
+                        x = sol_polish.x
                         rr = rr_solve
                     break
                 if verbose: 
@@ -367,7 +390,7 @@ class CGE:
                     w = float(self._store['walras'])
                     with open('convergence_log.csv', 'a') as f:
                         f.write(f'{cur+step},{rr},{w}\n')
-                if step<1e-4 or nfail>60:
+                if step<1e-4 or nfail>20:
                     warnings.warn("solve_path: blocage à s=%.4f (res=%.1e)"%(cur,rr)); break
         setter(self,cur)
         rfin=float(np.max(np.abs(self.residual(x))))

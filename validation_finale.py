@@ -4,6 +4,10 @@ import numpy as np, warnings
 warnings.simplefilter("ignore")
 from scipy.optimize import root
 from cge import CGE
+import builtins
+f_log = open('trace.log', 'w')
+old_print = builtins.print
+builtins.print = lambda *a, **k: [old_print(*a, **k), f_log.write(' '.join(map(str,a))+'\n'), f_log.flush()]
 ok=lambda b:"REUSSI" if b else "ECHEC"
 
 print("T1 - Benchmark et Walras à l'année de base")
@@ -17,8 +21,10 @@ print("   écart=%.1e PIB=%.1f Mds -> %s"%(e,rb['GDP_VA']/1e3,ok(e<1e-6)))
 
 print("T3 - Choc fiscal +10 pts agroalimentaire : recyclage budgétaire + Walras")
 m2=CGE(); food=[i for i,c in enumerate(m2.d.I) if 62<=int(''.join(filter(str.isdigit,c)) or 0)<=97]
-m2.tic_sim=m2.tic.copy(); m2.tic_sim[food]+=0.10
-x2, _ = m2.solve(x0=xb, warn=False); r2=m2.report(x2)
+tic0=m2.tic.copy()
+def s3(mm,s): mm.tic_sim=tic0.copy(); mm.tic_sim[food]+=0.10*s
+x2, _ = m2.solve_path(s3, x0=xb, verbose=True)
+r2=m2.report(x2)
 res2=np.max(np.abs(m2.residual(x2)))
 dR=(r2['GVTrev']-rb['GVTrev'])/1e3; dSG=(r2['SG']-rb['SG'])/1e3; dG=(r2['Gov']-rb['Gov'])/1e3
 print("   res=%.1e ΔRec=%+.1f ΔSG=%+.1f Mds bouclage=%.1e walras=%.4f -> %s"%(
@@ -35,7 +41,7 @@ print("   s=%.2f res=%.1e ΔPIB=%+.2f%% walras=%.4f -> %s"%(i4['s'],i4['res'],
 print("T5 - Prix mondial de l'or -20% (homotopie, coins de rentes)")
 m5=CGE(); i60=m5.d.I.index('P60')
 def s5(mm,s): mm.pwe=np.ones(mm.nI); mm.pwe[i60]=1-0.20*s
-x5,i5=m5.solve_path(s5,x0=xb,max_time=1200); r5=m5.report(x5)
+x5,i5=m5.solve_path(s5,x0=xb,max_time=1200, verbose=True); r5=m5.report(x5)
 print("   s=%.2f res=%.1e coins=%d ΔPIB=%+.2f%% walras=%.4f -> %s"%(i5['s'],i5['res'],len(i5['idle']),
   100*(r5['GDP_VA']/rb['GDP_VA']-1),abs(r5['walras']),ok(i5['s']>0.7 and i5['res']<1e-6)))
 
@@ -44,7 +50,7 @@ m6=CGE(); m6.closure_lab='chomage'
 x6,_=m6.solve(warn=False); m6.Wbar=(m6._store['W']/m6._store['cpi']).copy()
 tic0=m6.tic.copy()
 def s6(mm,s): mm.tic_sim=tic0.copy(); mm.tic_sim[food]+=0.05*s
-x6b,i6=m6.solve_path(s6,x0=x6); m6.residual(x6b); S6=m6._store
+x6b,i6=m6.solve_path(s6,x0=x6, verbose=True); m6.residual(x6b); S6=m6._store
 wreal=S6['W']/S6['cpi']
 print("   s=%.2f res=%.1e chômage=%.2f%% |w_réel-Wbar|=%.1e walras=%.4f -> %s"%(i6['s'],i6['res'],
   S6['chomage_pct'],np.max(np.abs(wreal-m6.Wbar)),abs(S6['walras']),

@@ -9,6 +9,10 @@ np.seterr(all='ignore')
 def _digits(s): return int(''.join(filter(str.isdigit,s)) or 0)
 
 def fiscal(commodities=None, add=0.10, prefix=None):
+    """
+    Simule un choc fiscal (ex: hausse de la TVA) sur des produits spécifiques.
+    `add`: Points à ajouter au taux de taxe indirecte `tic` (ex: 0.10 pour +10%).
+    """
     def s(m,t=0,sc=1.0):
         idx=[i for i,c in enumerate(m.d.I) if (commodities and c in commodities)]
         if prefix: idx=[i for i,c in enumerate(m.d.I) if prefix[0]<=_digits(c)<=prefix[1]]
@@ -16,6 +20,11 @@ def fiscal(commodities=None, add=0.10, prefix=None):
         for i in idx: m.tic_sim[i]+=add*sc
     return s
 def tfp(sectors=None, branch_range=None, factor=1.10):
+    """
+    Simule un choc de Productivité Globale des Facteurs (PGF).
+    Améliore l'efficacité de la combinaison Capital-Travail (le paramètre B_VA).
+    `factor`: Multiplicateur de productivité (ex: 1.10 pour +10% de PGF).
+    """
     def s(m,t=0,sc=1.0):
         if not hasattr(m,'_bva0'): m._bva0=m.p.B_VA.copy()
         idx=[j for j,c in enumerate(m.d.J) if (sectors and c in sectors)]
@@ -24,6 +33,11 @@ def tfp(sectors=None, branch_range=None, factor=1.10):
         for j in idx: m.p.B_VA[j]*=1+(factor-1)*sc
     return s
 def world_price(commodities=None, imp_factor=1.0, exp_factor=1.0, prefix=None):
+    """
+    Simule une variation des prix mondiaux (choc externe).
+    `imp_factor`: Multiplicateur du prix mondial des importations (pwm).
+    `exp_factor`: Multiplicateur du prix mondial des exportations (pwe).
+    """
     def s(m,t=0,sc=1.0):
         idx=[i for i,c in enumerate(m.d.I) if (commodities and c in commodities)]
         if prefix: idx=[i for i,c in enumerate(m.d.I) if prefix[0]<=_digits(c)<=prefix[1]]
@@ -31,9 +45,41 @@ def world_price(commodities=None, imp_factor=1.0, exp_factor=1.0, prefix=None):
         for i in idx: m.pwm[i]*=1+(imp_factor-1)*sc; m.pwe[i]*=1+(exp_factor-1)*sc
     return s
 def factor_supply(labour=1.0, capital=1.0):
+    """
+    Simule un choc sur l'offre globale de facteurs de production.
+    `labour`: Multiplicateur de la population active totale (LS).
+    `capital`: Multiplicateur du stock de capital total (KS).
+    """
     def s(m,t=0,sc=1.0): m.LS=m.LSo*(1+(labour-1)*sc); m.KS=m.KSo*(1+(capital-1)*sc)
     return s
+def social_transfer(amount_total=10.0):
+    """Transfert financier direct de l'État vers les ménages (ex: aide sociale). amount_total en Mds CFA."""
+    def s(m,t=0,sc=1.0):
+        if not hasattr(m, '_trRecvH0'):
+            m._trRecvH0 = m.trRecvH.copy()
+            m._trPaidG0 = m.trPaidG
+        # Répartition égalitaire du montant entre toutes les catégories de ménages
+        m.trRecvH = m._trRecvH0 + (amount_total / m.nH) * sc
+        m.trPaidG = m._trPaidG0 + amount_total * sc
+    return s
+def input_subsidy(inputs=None, sectors=None, sub_rate=0.10):
+    """Subvention (en % du prix) sur l'achat d'intrants spécifiques par certains secteurs."""
+    def s(m,t=0,sc=1.0):
+        if not hasattr(m, '_tsub_interm0'):
+            m._tsub_interm0 = m.tsub_interm.copy()
+        
+        idx_i = [i for i,c in enumerate(m.d.I) if (inputs is None or c in inputs)]
+        idx_j = [j for j,c in enumerate(m.d.J) if (sectors is None or c in sectors)]
+        
+        m.tsub_interm = m._tsub_interm0.copy()
+        for i in idx_i:
+            for j in idx_j:
+                m.tsub_interm[i, j] += sub_rate * sc
+    return s
 def combine(*shocks):
+    """
+    Combine plusieurs chocs en un seul (ex: choc TFP + choc mondial en même temps).
+    """
     def s(m,t=0,sc=1.0):
         for sh in shocks: sh(m,t,sc)
     return s
@@ -62,7 +108,7 @@ def run_static(shock, sec_cap=True, closure=None, steps=6, verbose=True):
     xb,_=m.solve(); m.Wbar=(m._store['W']/m._store['cpi']).copy(); r0=m.report(xb)  # salaire RÉEL de réf.
     m2=CGE(); m2.sec_cap=sec_cap; _apply_closure(m2,closure); m2.Wbar=m.Wbar
     if shock:
-        x2,info=m2.solve_path(lambda mm,s: shock(mm,0,s), x0=xb)
+        x2,info=m2.solve_path(lambda mm,s: shock(mm,0,s), x0=xb, verbose=verbose)
         sol=info
     else:
         x2,sol=xb,None
