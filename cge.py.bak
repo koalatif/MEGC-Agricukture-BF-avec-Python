@@ -268,7 +268,7 @@ class CGE:
         if warn and abs(self._store['walras'])>1e-4*max(abs(self.SROWo),1.0):
             warnings.warn(f"CGE.solve: loi de Walras violée ({self._store['walras']:.2f})")
         return best.x,best
-    def solve_path(self,setter,x0=None,step0=0.15,tol=2e-3,max_time=600,verbose=False):
+    def solve_path(self,setter,x0=None,step0=0.15,tol=1e-8,max_time=600,verbose=False):
         """Homotopie adaptative s in (0,1] avec pivotage automatique des rentes en coin
         (capital sectoriel oisif : R=0, KD<KDj). setter(m,s) applique la fraction s du choc.
         Retourne (x, info)."""
@@ -295,7 +295,7 @@ class CGE:
                 warnings.warn("solve_path: temps maximal atteint (s=%.3f)"%cur); break
             s=min(cur+step,1.0)
             setter(self,s)
-            sol=root(res_piv,x,method='lm',options={'maxiter':getattr(self,'path_maxiter',20000), 'xtol': 1e-4})
+            sol=root(res_piv,x,method='lm',options={'maxiter':getattr(self,'path_maxiter',20000)})
             rr=float(np.max(np.abs(res_piv(sol.x))))
             if rr<tol:
                 x=sol.x; cur=s; step=min(step*1.6,step0); nfail=0

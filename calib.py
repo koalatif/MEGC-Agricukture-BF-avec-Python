@@ -77,6 +77,12 @@ def extract(SM,order,meta,verbose=False):
     d.KFROW=np.array([C('K',k,'AG','row') for k in d.K])   # revenu net des facteurs reçu du RdM (fixe)
     if verbose and (d.make_neg_moved or d.kd_neg_fixed):
         print(f"[extract] make négatif déplacé en CI: {d.make_neg_moved:,.0f} ; capital négatif redistribué: {d.kd_neg_fixed:,.0f}")
+    
+    # FIX: Transfer negative investments to stocks to prevent unstable derivatives
+    idx_neg = d.INVO < 0
+    d.VSTKO[idx_neg] += d.INVO[idx_neg]
+    d.INVO[idx_neg] = 0.0
+    
     return d
 def calibrate(d, elas=None):
     e=dict(sVA=1.5,sLD=0.8,sKD=0.8,sXT=2.0,sX=2.0,sM=2.0,sXD=2.0,frisch=-1.5,sY=1.0)
