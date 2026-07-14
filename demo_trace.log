@@ -1,0 +1,46 @@
+
+
+============================================================
+ SCÉNARIO 1 : CRISE (Sécheresse -5% + Engrais +25%)
+============================================================
+
+===== Scénario [clôture {'lab': 'chomage'}] =====
+  Agrégat                  BAU        Choc    Var %
+  PIB_VA                 9,866       9,748   -1.19%
+  Conso                  7,196       7,041   -2.16%
+  Invest                 2,342       2,271   -3.03%
+  Gov                    1,570       1,556   -0.89%
+  Export                 2,385       2,325   -2.51%
+  Import                 2,874       2,815   -2.05%
+  Recettes_pub           2,100       2,063   -1.77%
+  Epargne_pub               -4         -27  652.98%
+  Salaire_moy                1           1   -1.10%
+  IPC                        1           1   -1.07%
+  Bien-être (variation équivalente, Mds FCFA):
+     hrp   : -14.9
+     hup   : -1.1
+     hrr   : -27.5
+     hur   : -34.8
+
+
+============================================================
+ SCÉNARIO 2 : RIPOSTE (Subvention Engrais 50%)
+============================================================
+
+===== Scénario [clôture {'lab': 'chomage'}] =====
+  Agrégat                  BAU        Choc    Var %
+  PIB_VA                 9,866       9,748   -1.19%
+  Conso                  7,196       7,041   -2.16%
+  Invest                 2,342       2,271   -3.03%
+  Gov                    1,570       1,556   -0.89%
+  Export                 2,385       2,325   -2.51%
+  Import                 2,874       2,815   -2.05%
+  Recettes_pub           2,100       2,063   -1.77%
+  Epargne_pub               -4         -27  652.98%
+  Salaire_moy                1           1   -1.10%
+  IPC                        1           1   -1.07%
+  Bien-être (variation équivalente, Mds FCFA):
+     hrp   : -14.9
+     hup   : -1.1
+     hrr   : -27.5
+     hur   : -34.8
