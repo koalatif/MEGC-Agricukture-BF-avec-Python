@@ -75,10 +75,12 @@ def input_subsidy(inputs=None, sectors=None, sub_rate=0.10):
         for i in idx_i:
             for j in idx_j:
                 m.tsub_interm[i, j] += sub_rate * sc
+        print("DEBUG: sub_rate=", sub_rate, "sc=", sc, "sum(tsub_interm)=", m.tsub_interm.sum(), "len(i)=", len(idx_i), "len(j)=", len(idx_j))
     return s
+
 def combine(*shocks):
     """
-    Combine plusieurs chocs en un seul (ex: choc TFP + choc mondial en même temps).
+     Combine plusieurs chocs en un seul (ex: choc TFP + choc mondial en même temps).
     """
     def s(m,t=0,sc=1.0):
         for sh in shocks: sh(m,t,sc)

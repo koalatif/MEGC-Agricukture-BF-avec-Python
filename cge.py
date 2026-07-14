@@ -345,7 +345,7 @@ class CGE:
                 warnings.warn("solve_path: temps maximal atteint (s=%.3f)"%cur); break
             s=min(cur+step,1.0)
             setter(self,s)
-            sol=root(res_piv,x,method='hybr',options={'maxiter':getattr(self,'path_maxiter',20000), 'xtol': 1e-4})
+            sol=root(res_piv,x,method='hybr',options={'maxfev':getattr(self,'path_maxiter',20000), 'xtol': 1e-4})
             rr=float(np.max(np.abs(res_piv(sol.x))))
             if rr>tol and method!='lm':  # Fallback to lm if hybr fails
                 sol=root(res_piv,x,method='lm',options={'maxiter':getattr(self,'path_maxiter',20000), 'xtol': 1e-4})
