@@ -7,3 +7,4 @@ __pycache__/
 .pytest_cache/
 .venv/
 convergence_log.csv
+backup_*/

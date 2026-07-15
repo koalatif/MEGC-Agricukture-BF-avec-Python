@@ -26,7 +26,7 @@ print("    Choc: +5% d'offre de travail")
 SC.compare_closures(SC.factor_supply(labour=1.05))
 
 print("\n[6] Exports")
-R.export_excel("resultats_scenario_fiscal.xlsx", sc['model'], r0, sc['r1'],
+R.export_excel(sc['model'], r0, sc['r1'], path="resultats_scenario_fiscal.xlsx",
                dyn_path=dyn['bau'], dyn_shock=dyn.get('shock'))
 R.plot_dynamic(dyn['bau'], dyn.get('shock'), out="sentier_dynamique.png",
                labels=("BAU","+10% TFP agri"))
