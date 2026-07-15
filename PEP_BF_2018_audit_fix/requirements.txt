@@ -1,6 +1,0 @@
-numpy
-scipy
-openpyxl
-matplotlib
-pytest
-pandas

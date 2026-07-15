@@ -1,5 +1,0 @@
-* text=auto
-*.py text eol=lf
-*.npy binary
-*.xlsx binary
-*.png binary

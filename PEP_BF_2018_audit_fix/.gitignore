@@ -1,9 +1,0 @@
-__pycache__/
-*.pyc
-*.bak
-*.log
-~$*
-.Rhistory
-.pytest_cache/
-.venv/
-convergence_log.csv
