@@ -286,30 +286,6 @@ class CGE:
         return np.concatenate([r_zp,r_com,r_L,r_K])
     def _res_log(self,u):
         return self.residual(np.exp(u))
-    @staticmethod
-    def _newton_ls(F,x0,tol=1e-9,maxit=40):
-        """Newton amorti (moindres carrés + recherche linéaire) — robuste aux Jacobiennes
-        quasi singulières là où hybr/lm de SciPy stagnent."""
-        x=np.asarray(x0,float).copy()
-        f=F(x); nf=float(np.max(np.abs(f)))
-        if not np.isfinite(nf): return x,np.inf
-        for _ in range(maxit):
-            if nf<tol: break
-            n=len(x); J=np.zeros((len(f),n))
-            for k in range(n):
-                h=1e-7*max(abs(x[k]),1e-4)
-                xp=x.copy(); xp[k]+=h
-                J[:,k]=(F(xp)-f)/h
-            if not np.all(np.isfinite(J)): break
-            dx,_,_,_=np.linalg.lstsq(J,-f,rcond=None)
-            lam=1.0; ok=False
-            for _ls in range(25):
-                xn=x+lam*dx; fn=F(xn); nfn=float(np.max(np.abs(fn)))
-                if np.isfinite(nfn) and nfn<nf*(1-1e-4*lam):
-                    x,f,nf=xn,fn,nfn; ok=True; break
-                lam/=2
-            if not ok: break
-        return x,nf
     def solve(self,x0=None,method='lm',tol=1e-9,warn=True,log_vars=None):
         """Résolution robuste : niveaux d'abord sur départ chaud, log (positivité) sinon, replis."""
         from scipy.optimize import root
@@ -349,34 +325,18 @@ class CGE:
         if x0 is None:
             setter(self,0.0); x0,_=self.solve(warn=False)
         x=np.asarray(x0,float).copy()
-        PLF=getattr(self,'PLFLOOR',1e-6)             # plancher de prix (biens libres, offre>demande)
         idle=set()                                   # cellules (k,j) à rente nulle (capital oisif)
-        freeg=set()                                  # produits i à prix nul (bien libre : DS>DD, PL=plancher)
         if self.sec_cap:                             # régime initial d'après x0
             _,_,R0,_=self.unpack(x)
             for (k,j) in zip(*np.where((R0<2e-3)&(self.KDo>1e-9))): idle.add((int(k),int(j)))
-        for i in np.where((x[:self.nI]<10*PLF)&self.validQ)[0]: freeg.add(int(i))
         nJ,nI,nL=self.nJ,self.nI,self.nL
         def res_piv(xx):
             r=self.residual(xx)
             if idle and self.sec_cap:
                 _,_,Rm,_=self.unpack(xx)
                 for (k,j) in idle: r[nJ+nI+nL+k*self.nJ+j]=(Rm[k,j]-0.0)*1.0
-            for i in freeg: r[nJ+i]=(xx[i]-PLF)*1.0  # PL épinglé au plancher (excédent librement disposé)
             return r
-        def _solve_step(xstart):
-            """cascade : hybr (rapide) -> Newton amorti niveaux -> Newton amorti log."""
-            sol=root(res_piv,xstart,method='hybr',options={'maxfev':getattr(self,'path_maxiter',20000),'xtol':1e-8})
-            xs=sol.x; rr=float(np.max(np.abs(res_piv(xs))))
-            if not np.isfinite(rr): xs,rr=xstart,float(np.max(np.abs(res_piv(xstart))))
-            if rr>tol*1e-3:
-                xn,rn=self._newton_ls(res_piv,xstart,tol=1e-9,maxit=30)
-                if rn<rr: xs,rr=xn,rn
-            if rr>tol*1e-3:
-                un,rn=self._newton_ls(lambda u:res_piv(np.exp(u)),np.log(np.maximum(xstart,1e-12)),tol=1e-9,maxit=30)
-                if rn<rr: xs,rr=np.exp(un),rn
-            return xs,rr
-        cur=0.0; step=step0; nfail=0; xprev=None; sprev=0.0
+        cur=0.0; step=step0; nfail=0
         if verbose:
             with open('convergence_log.csv', 'w') as f:
                 f.write('s,residual,walras\n')
@@ -385,49 +345,44 @@ class CGE:
                 warnings.warn("solve_path: temps maximal atteint (s=%.3f)"%cur); break
             s=min(cur+step,1.0)
             setter(self,s)
-            # prédicteur sécant le long du chemin (continuation d'ordre 1)
-            if xprev is not None and cur>sprev:
-                xstart=np.maximum(x+(x-xprev)*((s-cur)/(cur-sprev)),PLF)
-            else: xstart=x
-            xs,rr=_solve_step(xstart)
-            if rr>tol and xstart is not x:            # repli : sans prédicteur
-                xs2,rr2=_solve_step(x)
-                if rr2<rr: xs,rr=xs2,rr2
+            sol=root(res_piv,x,method='hybr',options={'maxfev':getattr(self,'path_maxiter',20000), 'xtol': 1e-4})
+            rr=float(np.max(np.abs(res_piv(sol.x))))
+            if rr>tol and method!='lm':  # Fallback to lm if hybr fails
+                sol=root(res_piv,x,method='lm',options={'maxiter':getattr(self,'path_maxiter',20000), 'xtol': 1e-4})
+                rr=float(np.max(np.abs(res_piv(sol.x))))
+            if rr>tol: # Try the robust log solver
+                xs, best_sol = self.solve(x0=x, warn=False)
+                rr_solve = float(np.max(np.abs(self.residual(xs))))
+                if rr_solve < rr:
+                    sol = best_sol
+                    sol.x = xs
+                    rr = rr_solve
             if rr<tol:
-                xprev=x; sprev=cur; x=xs; cur=s; step=min(step*1.6,step0); nfail=0
-                changed=False
-                if self.sec_cap:                      # mise à jour du régime (capital)
-                    R=x[nJ+nI+nL:nJ+nI+nL+self.nK*self.nJ].reshape((self.nK,self.nJ))
-                    for (k,j) in zip(*np.where((R<2e-3)&(self.KDo>1e-9))):
-                        if (int(k),int(j)) not in idle: idle.add((int(k),int(j))); changed=True
+                x=sol.x; cur=s; step=min(step*1.6,step0); nfail=0
+                if self.sec_cap:                      # mise à jour du régime
+                    R=sol.x[nJ+nI+nL:nJ+nI+nL+self.nK*self.nJ].reshape((self.nK,self.nJ))
+                    for (k,j) in zip(*np.where((R<2e-3)&(self.KDo>1e-9))): idle.add((int(k),int(j)))
                     for (k,j) in [c for c in idle if self._store['KD'][c[0],c[1]]>self.KDj[c[0],c[1]]*(1+1e-6)]:
-                        idle.discard((k,j)); changed=True
-                # mise à jour du régime (biens libres) : prix au plancher <-> excédent d'offre
-                rorig=self.residual(x)                # r_com original = (DS-DD)/max(Qo,1)
-                for i in np.where((x[:nI]<10*PLF)&self.validQ)[0]:
-                    if int(i) not in freeg: freeg.add(int(i)); changed=True
-                rel=[i for i in freeg if rorig[nJ+i]<-1e-8]   # excès de demande au plancher : libéré
-                for i in rel: freeg.discard(i); changed=True
-                if changed:                           # re-résolution au même s avec le nouveau régime
-                    xs,rr=_solve_step(x)
-                    if rr<tol: x=xs
+                        idle.discard((k,j))           # rente redevient positive : cellule libérée
                 if s>=1.0:
-                    x2,rr2=_solve_step(x)             # polish final
-                    if rr2<rr: x,rr=x2,rr2
+                    # Final polish to get exact solution
+                    sol_polish = root(res_piv, x, method='lm', options={'xtol': 1e-8})
+                    rr_solve = float(np.max(np.abs(self.residual(sol_polish.x))))
+                    if rr_solve < 1e-4:  # Accept polish if it converged well
+                        x = sol_polish.x
+                        rr = rr_solve
                     break
-                if verbose:
-                    print("   s=%.3f res=%.1e coins=%d libres=%d"%(cur,rr,len(idle),len(freeg)))
+                if verbose: 
+                    print("   s=%.3f res=%.1e coins=%d"%(cur,rr,len(idle)))
                     w = float(self._store['walras'])
                     with open('convergence_log.csv', 'a') as f:
                         f.write(f'{cur},{rr},{w}\n')
             else:
                 added=False
                 if self.sec_cap:                      # pivot spéculatif : rentes écrasées dans l'essai raté
-                    _,_,Rf,_=self.unpack(xs)
+                    _,_,Rf,_=self.unpack(sol.x)
                     for (k,j) in zip(*np.where((Rf<2e-3)&(self.KDo>1e-9))):
                         if (int(k),int(j)) not in idle: idle.add((int(k),int(j))); added=True
-                for i in np.where((np.asarray(xs[:nI])<10*PLF)&self.validQ)[0]:  # prix écrasés dans l'essai raté
-                    if int(i) not in freeg: freeg.add(int(i)); added=True
                 if not added:
                     step/=2
                 nfail+=1
@@ -438,10 +393,8 @@ class CGE:
                 if step<1e-4 or nfail>20:
                     warnings.warn("solve_path: blocage à s=%.4f (res=%.1e)"%(cur,rr)); break
         setter(self,cur)
-        rfin=float(np.max(np.abs(res_piv(x))))
-        self.residual(x)
-        self._freeg=sorted(freeg)
-        return x,dict(s=cur,res=rfin,idle=sorted(idle),free=sorted(freeg),ok=bool(cur>1.0-1e-9 and rfin<1e-3))
+        rfin=float(np.max(np.abs(self.residual(x))))
+        return x,dict(s=cur,res=rfin,idle=sorted(idle),ok=bool(cur>1.0-1e-9 and rfin<1e-3))
 
     def report(self,x):
         self.residual(x); S=self._store; d=self.d

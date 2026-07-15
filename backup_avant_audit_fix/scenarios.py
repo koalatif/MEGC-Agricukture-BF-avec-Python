@@ -67,14 +67,15 @@ def input_subsidy(inputs=None, sectors=None, sub_rate=0.10):
     def s(m,t=0,sc=1.0):
         if not hasattr(m, '_tsub_interm0'):
             m._tsub_interm0 = m.tsub_interm.copy()
-
+        
         idx_i = [i for i,c in enumerate(m.d.I) if (inputs is None or c in inputs)]
         idx_j = [j for j,c in enumerate(m.d.J) if (sectors is None or c in sectors)]
-
+        
         m.tsub_interm = m._tsub_interm0.copy()
         for i in idx_i:
             for j in idx_j:
                 m.tsub_interm[i, j] += sub_rate * sc
+        print("DEBUG: sub_rate=", sub_rate, "sc=", sc, "sum(tsub_interm)=", m.tsub_interm.sum(), "len(i)=", len(idx_i), "len(j)=", len(idx_j))
     return s
 
 def combine(*shocks):

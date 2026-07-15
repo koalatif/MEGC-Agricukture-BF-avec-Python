@@ -3,4 +3,7 @@ scipy
 openpyxl
 matplotlib
 pytest
+
+pytest
+matplotlib
 pandas
